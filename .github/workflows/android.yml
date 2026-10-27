@@ -1,5 +1,7 @@
 name: Android APK
 on: [push, workflow_dispatch]
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -14,16 +16,16 @@ jobs:
           gradle-version: '8.9'
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
-      - name: Verify installable APK was produced
+      - name: Verify APK structure
         shell: bash
         run: |
           set -euo pipefail
           APK=app/build/outputs/apk/debug/app-debug.apk
           test -s "$APK"
-          file "$APK"
           unzip -t "$APK" >/dev/null
-          unzip -Z1 "$APK" | grep -q '^AndroidManifest.xml$'
-          unzip -Z1 "$APK" | grep -q '^classes.dex$'
+          unzip -Z1 "$APK" | grep -qx 'AndroidManifest.xml'
+          unzip -Z1 "$APK" | grep -qx 'classes.dex'
+          file "$APK"
           echo "APK size: $(stat -c%s "$APK") bytes"
           sha256sum "$APK"
       - uses: actions/upload-artifact@v4
@@ -31,4 +33,17 @@ jobs:
           name: The-Robbots-Player-Iron-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 30
+      - name: Publish direct APK download as test pre-release
+        if: github.ref == 'refs/heads/iron-edition-ui-2026'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="iron-test-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" app/build/outputs/apk/debug/app-debug.apk#The-Robbots-Player-Iron-Test.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Iron Edition test build ${GITHUB_RUN_NUMBER}" \
+            --notes "TEST BUILD ONLY. APK structure validated by CI; device playback and design are not yet verified. Does not replace the stable player." \
+            --prerelease
